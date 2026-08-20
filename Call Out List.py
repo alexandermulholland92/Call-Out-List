@@ -1,9 +1,15 @@
-import streamlit as st
-import requests
 import os
+import requests
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify, render_template_string
 
-# Configure via environment variable in production, or replace with your URL
-SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/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")
+# Load environment variables from .env
+load_dotenv()
+
+app = Flask(__name__)
+
+# This will now pull securely from your .env file
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
 
 def notify_slack(worker_name, notification_type, reason, eta=""):
     """Pushes formatted attendance data to the Slack channel with visual priority."""
