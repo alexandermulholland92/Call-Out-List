@@ -3,7 +3,7 @@ import requests
 import os
 
 # Configure via environment variable in production, or replace with your URL
-SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/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")
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/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")
 
 def notify_slack(worker_name, notification_type, reason, eta=""):
     """Pushes formatted attendance data to the Slack channel with visual priority."""
