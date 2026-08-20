@@ -1,7 +1,7 @@
-import streamlit as st
-import requests
 import os
-from datetime import date, timedelta
+from datetime import date
+import requests
+import streamlit as st
 
 # Fetch Slack Webhook URL from Streamlit Secrets or Environment Variables
 SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"))
@@ -16,7 +16,6 @@ TYPE_CONFIGS = {
 
 def notify_slack(worker_name, date_entries, reason):
     """Pushes formatted multi-date attendance data to Slack."""
-    
     schedule_lines = []
     has_call_out = False
     
@@ -68,25 +67,41 @@ st.write("Submit call outs or attendance notices directly to Slack.")
 
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# Generate rolling window of dates
-today = date.today()
-available_dates = [today + timedelta(days=i) for i in range(-3, 60)]
+# Initialize session state for storing dates picked from the calendar
+if "selected_dates" not in st.session_state:
+    st.session_state.selected_dates = [date.today()]
 
-selected_dates = st.multiselect(
-    "1. Select Date(s)",
-    options=available_dates,
-    default=[today],
-    format_func=lambda d: d.strftime("%a, %b %d, %Y")
-)
+st.subheader("1. Pick Date(s) from Calendar Box")
+col_cal, col_btn = st.columns([3, 1])
 
-if selected_dates:
+with col_cal:
+    picked_date = st.date_input("Select Date", value=date.today())
+
+with col_btn:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("➕ Add Date", use_container_width=True):
+        if picked_date not in st.session_state.selected_dates:
+            st.session_state.selected_dates.append(picked_date)
+            st.session_state.selected_dates.sort()
+            st.rerun()
+
+# Display selected dates with remove chips
+if st.session_state.selected_dates:
+    st.caption("Click a date below to remove it:")
+    cols = st.columns(min(len(st.session_state.selected_dates), 4))
+    for idx, d in enumerate(list(st.session_state.selected_dates)):
+        col_idx = idx % 4
+        if cols[col_idx].button(f"❌ {d.strftime('%b %d')}", key=f"remove_{d}"):
+            st.session_state.selected_dates.remove(d)
+            st.rerun()
+
     st.subheader("2. Configure Status per Date")
     
     with st.form("attendance_form"):
         date_entries = []
         options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
         
-        for d in sorted(selected_dates):
+        for d in sorted(st.session_state.selected_dates):
             date_str = d.strftime("%a, %b %d, %Y")
             
             col1, col2 = st.columns([1, 1])
@@ -132,3 +147,6 @@ if selected_dates:
                 success = notify_slack(worker_name, date_entries, reason)
                 if success:
                     st.success(f"Success! Attendance update logged for {worker_name}.")
+                    st.session_state.selected_dates = [date.today()]  # Reset date list after submission
+else:
+    st.info("Please pick at least one date using the calendar above.")
