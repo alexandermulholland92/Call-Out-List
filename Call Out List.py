@@ -1,15 +1,12 @@
-import os
+import streamlit as st
 import requests
-from flask import Flask, request, jsonify, render_template_string
+import os
 
-app = Flask(__name__)
-
-# Configure via environment variable in production
+# Configure via environment variable in production, or replace with your URL
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/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")
 
 def notify_slack(worker_name, notification_type, reason, eta=""):
     """Pushes formatted attendance data to the Slack channel with visual priority."""
-    
     if notification_type == "Late":
         header = "⏳ *Running Late*"
         color = "#FF9500"  # Warning Orange
@@ -39,72 +36,37 @@ def notify_slack(worker_name, notification_type, reason, eta=""):
     try:
         response = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=5)
         response.raise_for_status()
+        return True
     except requests.exceptions.RequestException as e:
-        print(f"Slack webhook execution failed: {e}")
+        st.error(f"Slack webhook failed: {e}")
+        return False
 
-@app.route("/", methods=["GET"])
-def index():
-    """Serves the baseline frontend for attendance notifications."""
-    html_interface = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Attendance Notification</title>
-        <script>
-            function toggleETA() {
-                var type = document.getElementById("notification_type").value;
-                var etaInput = document.getElementById("eta_input");
-                if (type === "Late") {
-                    etaInput.style.display = "block";
-                    etaInput.required = true;
-                } else {
-                    etaInput.style.display = "none";
-                    etaInput.required = false;
-                }
-            }
-        </script>
-    </head>
-    <body style="font-family: sans-serif; max-width: 400px; margin: 2rem auto;">
-        <h2>Attendance Update</h2>
-        <form action="/notify" method="POST">
-            <input type="text" name="worker_name" placeholder="Team Member Name" required style="width: 100%; margin-bottom: 1rem; padding: 0.5rem; box-sizing: border-box;" />
-            
-            <select name="notification_type" id="notification_type" onchange="toggleETA()" style="width: 100%; margin-bottom: 1rem; padding: 0.5rem; box-sizing: border-box;">
-                <option value="Late">Running Late</option>
-                <option value="Call Out">Call Out (Absent)</option>
-            </select>
-            
-            <input type="text" name="eta" id="eta_input" placeholder="ETA (e.g., 10:30 AM or 'in 15 mins')" required style="width: 100%; margin-bottom: 1rem; padding: 0.5rem; box-sizing: border-box;" />
-            
-            <textarea name="reason" placeholder="Reason / Context" required style="width: 100%; height: 80px; margin-bottom: 1rem; padding: 0.5rem; box-sizing: border-box;"></textarea>
-            
-            <button type="submit" style="width: 100%; padding: 0.75rem; background: #000; color: #fff; border: none; cursor: pointer;">Submit Notification</button>
-        </form>
-    </body>
-    </html>
-    """
-    return render_template_string(html_interface)
+# --- UI Layout ---
+st.title("Attendance Update")
+st.write("Submit call outs or late notices directly to Slack.")
 
-@app.route("/notify", methods=["POST"])
-def notify():
-    """Handles the form submission and executes the Slack payload."""
-    worker_name = request.form.get("worker_name")
-    notification_type = request.form.get("notification_type")
-    reason = request.form.get("reason")
-    eta = request.form.get("eta", "")
+with st.form("attendance_form"):
+    worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
     
-    # Validate base fields
-    if not worker_name or not notification_type or not reason:
-        return jsonify({"error": "Missing required fields"}), 400
-        
-    # Validate ETA if running late
-    if notification_type == "Late" and not eta:
-        return jsonify({"error": "ETA is required when running late"}), 400
-
-    # Execute Slack notification
-    notify_slack(worker_name, notification_type, reason, eta)
+    notification_type = st.selectbox("Notification Type", ["Late", "Call Out"])
     
-    return jsonify({"message": f"Success. {notification_type} logged for {worker_name}."}), 200
+    # We always show ETA, but we'll only enforce it if they select "Late"
+    eta = st.text_input("ETA (Required if Running Late)", placeholder="e.g. 10:30 AM or 'in 15 mins'")
+    
+    reason = st.text_area("Reason / Context", placeholder="Brief reason for the delay or absence...")
+    
+    submitted = st.form_submit_button("Submit Notification", type="primary")
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    if submitted:
+        # Validation
+        if not worker_name.strip():
+            st.error("Please enter a Team Member Name.")
+        elif not reason.strip():
+            st.error("Please enter a Reason / Context.")
+        elif notification_type == "Late" and not eta.strip():
+            st.error("ETA is required when running late.")
+        else:
+            # Everything is valid, send the notification
+            success = notify_slack(worker_name, notification_type, reason, eta)
+            if success:
+                st.success(f"Success! {notification_type} logged for {worker_name}.")
