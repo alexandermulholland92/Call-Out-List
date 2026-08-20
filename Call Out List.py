@@ -1,37 +1,54 @@
 import streamlit as st
 import requests
-from datetime import date, timedelta
+import os
 
-st.set_page_config(page_title="Attendance Notification", page_icon="📝")
+# Fetch Slack Webhook URL from Streamlit Secrets or Environment Variables
+SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"))
 
-# 1. Retrieve the webhook securely
-try:
-    WEBHOOK_URL = st.secrets["SLACK_WEBHOOK_URL"]
-except KeyError:
-    st.error("Configuration Error: SLACK_WEBHOOK_URL is missing from Streamlit secrets.")
-    st.stop()
+def notify_slack(worker_name, notification_type, reason, time_info=""):
+    """Pushes formatted attendance data to Slack with distinct visual priority."""
+    
+    # Custom configuration map for each notification type
+    configs = {
+        "Late": {
+            "header": "⏳ *Running Late*",
+            "color": "#FF9500",  # Orange
+            "details": f"*Name:* {worker_name}\n*ETA:* {time_info}\n*Context:* {reason}"
+        },
+        "Call Out": {
+            "header": "🚨 *Call Out (Full Day)*",
+            "color": "#FF3B30",  # Red
+            "details": f"*Name:* {worker_name}\n*Context:* {reason}"
+        },
+        "Call Out AM": {
+            "header": "🌅 *Call Out (AM Shift)*",
+            "color": "#FF3B30",  # Red
+            "details": f"*Name:* {worker_name}\n*Context:* {reason}"
+        },
+        "Call Out PM": {
+            "header": "🌇 *Call Out (PM Shift)*",
+            "color": "#FF3B30",  # Red
+            "details": f"*Name:* {worker_name}\n*Context:* {reason}"
+        },
+        "Leave Early": {
+            "header": "🏃 *Leaving Early*",
+            "color": "#FFCC00",  # Yellow
+            "details": f"*Name:* {worker_name}\n*Departure Time:* {time_info}\n*Context:* {reason}"
+        }
+    }
 
-def notify_slack(worker_name, notification_type, reason, formatted_date, eta=""):
-    """Pushes formatted attendance data to the Slack channel with visual priority."""
-    if notification_type == "Running Late":
-        header = "⏳ *Running Late*"
-        color = "#FF9500"  # Warning Orange
-        details = f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*ETA:* {eta}\n*Context:* {reason}"
-    else:
-        header = "🚨 *Call Out*"
-        color = "#FF3B30"  # Critical Red
-        details = f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*Context:* {reason}"
+    config = configs.get(notification_type, configs["Call Out"])
 
     payload = {
         "attachments": [
             {
-                "color": color,
+                "color": config["color"],
                 "blocks": [
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"{header}\n{details}"
+                            "text": f"{config['header']}\n{config['details']}"
                         }
                     }
                 ]
@@ -39,42 +56,42 @@ def notify_slack(worker_name, notification_type, reason, formatted_date, eta="")
         ]
     }
     
-    response = requests.post(WEBHOOK_URL, json=payload, timeout=5)
-    response.raise_for_status()
+    try:
+        response = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=5)
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        st.error(f"Slack webhook failed: {e}")
+        return False
 
-# 2. Generate a rolling window of dates (Today up to 30 days in the future)
-today = date.today()
-date_options = [(today + timedelta(days=i)).strftime("%A, %b %d, %Y") for i in range(0, 31)]
-default_date = [today.strftime("%A, %b %d, %Y")]
-
-# 3. Build the interface
+# --- UI Layout ---
 st.title("Attendance Update")
+st.write("Submit call outs or attendance notices directly to Slack.")
 
 with st.form("attendance_form"):
-    worker_name = st.text_input("Team Member Name", placeholder="Enter name...")
+    worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        notification_type = st.selectbox("Notification Type", ["Running Late", "Call Out (Absent)"])
-    with col2:
-        absence_dates = st.multiselect("Select Date(s)", options=date_options, default=default_date)
-        
-    eta = st.text_input("ETA (If running late)", placeholder="e.g., 15 minutes, 9:30 AM")
-    reason = st.text_area("Reason / Context", placeholder="Enter the reason...")
+    options = ["Late", "Call Out", "Call Out AM", "Call Out PM", "Leave Early"]
+    notification_type = st.selectbox("Notification Type", options)
     
-    submitted = st.form_submit_button("Submit Notification", use_container_width=True)
+    time_info = st.text_input(
+        "Time Details (ETA if Late / Departure Time if Leaving Early)", 
+        placeholder="e.g. 10:30 AM or 'Leaving at 2:00 PM'"
+    )
+    
+    reason = st.text_area("Reason / Context", placeholder="Brief reason for the schedule adjustment...")
+    
+    submitted = st.form_submit_button("Submit Notification", type="primary")
 
-# 4. Execute payload on submission
-if submitted:
-    if not worker_name.strip() or not reason.strip():
-        st.error("Team Member Name and Reason are required fields.")
-    elif not absence_dates:
-        st.error("Please select at least one date.")
-    else:
-        formatted_date = "\n> " + "\n> ".join(absence_dates)
-
-        try:
-            notify_slack(worker_name, notification_type, reason, formatted_date, eta)
-            st.success(f"Success. {notification_type} logged for {worker_name}.")
-        except requests.exceptions.RequestException as e:
-            st.error(f"Slack webhook execution failed: {e}")
+    if submitted:
+        # Form Validation
+        if not worker_name.strip():
+            st.error("Please enter a Team Member Name.")
+        elif not reason.strip():
+            st.error("Please enter a Reason / Context.")
+        elif notification_type in ["Late", "Leave Early"] and not time_info.strip():
+            st.error(f"Time details are required when selecting '{notification_type}'.")
+        else:
+            success = notify_slack(worker_name, notification_type, reason, time_info)
+            if success:
+                st.success(f"Success! '{notification_type}' logged for {worker_name}.")
