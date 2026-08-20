@@ -12,7 +12,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Fetch Slack Webhook URL
+# Fetch Slack Webhook URL from Streamlit Secrets or Environment Variables
 SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"))
 
 TYPE_CONFIGS = {
@@ -74,28 +74,45 @@ def notify_slack(worker_name, date_entries, reason):
 st.title("📋 Attendance Update")
 st.caption("Submit attendance notices directly to Slack.")
 
-# --- Form Inputs ---
+# Initialize session state for storing dates picked from calendar
+if "selected_dates" not in st.session_state:
+    st.session_state.selected_dates = [date.today()]
+
+# --- Inputs ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# Native Streamlit Calendar widget configured for picking multiple independent dates
-selected_dates = st.date_input(
-    "Select Date(s) from Calendar",
-    value=[date.today()],
-    selection_mode="multiple"
-)
+# Calendar widget to select date to add
+col_cal, col_add = st.columns([3, 1])
+with col_cal:
+    picked_date = st.date_input("Calendar Date Picker", value=date.today())
+with col_add:
+    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+    if st.button("➕ Add Date", use_container_width=True):
+        if picked_date not in st.session_state.selected_dates:
+            st.session_state.selected_dates.append(picked_date)
+            st.session_state.selected_dates.sort()
+            st.rerun()
 
 date_entries = []
 options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
 
-if selected_dates:
+if st.session_state.selected_dates:
     st.subheader("Configure Selected Dates")
     
     with st.form("attendance_form"):
-        for d in sorted(selected_dates):
+        for d in sorted(st.session_state.selected_dates):
             date_str = d.strftime("%A, %b %d, %Y")
             
             with st.container(border=True):
-                st.markdown(f"**📅 {date_str}**")
+                col_head, col_del = st.columns([4, 1])
+                with col_head:
+                    st.markdown(f"**📅 {date_str}**")
+                with col_del:
+                    if len(st.session_state.selected_dates) > 1:
+                        if st.form_submit_button("Remove", key=f"del_{d}"):
+                            st.session_state.selected_dates.remove(d)
+                            st.rerun()
+
                 col_status, col_time = st.columns([1, 1])
                 with col_status:
                     ntype = st.selectbox("Status", options, key=f"type_{d}")
@@ -134,5 +151,5 @@ if selected_dates:
             else:
                 if notify_slack(worker_name, date_entries, reason):
                     st.success(f"Notification successfully sent to Slack for {worker_name}!")
-else:
-    st.info("Please click and select at least one date from the calendar widget above.")
+                    st.session_state.selected_dates = [date.today()]
+                    st.rerun()
