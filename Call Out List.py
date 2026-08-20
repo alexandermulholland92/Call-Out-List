@@ -3,7 +3,16 @@ from datetime import date
 import requests
 import streamlit as st
 
-# Fetch Slack Webhook URL from Streamlit Secrets or Environment Variables
+# Set page config & styling
+st.set_page_config(page_title="Attendance Notice", page_icon="📋", layout="centered")
+
+st.markdown("""
+    <style>
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 680px; }
+    </style>
+""", unsafe_allow_html=True)
+
+# Fetch Slack Webhook URL
 SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"))
 
 TYPE_CONFIGS = {
@@ -34,7 +43,7 @@ def notify_slack(worker_name, date_entries, reason):
             has_call_out = True
 
     schedule_text = "\n".join(schedule_lines)
-    color = "#FF3B30" if has_call_out else "#FF9500"  # Red if call out, Orange if late/leaving early
+    color = "#FF3B30" if has_call_out else "#FF9500"
 
     payload = {
         "attachments": [
@@ -61,92 +70,69 @@ def notify_slack(worker_name, date_entries, reason):
         st.error(f"Slack webhook failed: {e}")
         return False
 
-# --- UI Layout ---
-st.title("Attendance Update")
-st.write("Submit call outs or attendance notices directly to Slack.")
+# --- App Header ---
+st.title("📋 Attendance Update")
+st.caption("Submit attendance notices directly to Slack.")
 
+# --- Form Inputs ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# Initialize session state for storing dates picked from the calendar
-if "selected_dates" not in st.session_state:
-    st.session_state.selected_dates = [date.today()]
+# Native Streamlit Calendar widget configured for picking multiple independent dates
+selected_dates = st.date_input(
+    "Select Date(s) from Calendar",
+    value=[date.today()],
+    selection_mode="multiple"
+)
 
-st.subheader("1. Pick Date(s) from Calendar Box")
-col_cal, col_btn = st.columns([3, 1])
+date_entries = []
+options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
 
-with col_cal:
-    picked_date = st.date_input("Select Date", value=date.today())
-
-with col_btn:
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("➕ Add Date", use_container_width=True):
-        if picked_date not in st.session_state.selected_dates:
-            st.session_state.selected_dates.append(picked_date)
-            st.session_state.selected_dates.sort()
-            st.rerun()
-
-# Display selected dates with remove chips
-if st.session_state.selected_dates:
-    st.caption("Click a date below to remove it:")
-    cols = st.columns(min(len(st.session_state.selected_dates), 4))
-    for idx, d in enumerate(list(st.session_state.selected_dates)):
-        col_idx = idx % 4
-        if cols[col_idx].button(f"❌ {d.strftime('%b %d')}", key=f"remove_{d}"):
-            st.session_state.selected_dates.remove(d)
-            st.rerun()
-
-    st.subheader("2. Configure Status per Date")
+if selected_dates:
+    st.subheader("Configure Selected Dates")
     
     with st.form("attendance_form"):
-        date_entries = []
-        options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
-        
-        for d in sorted(st.session_state.selected_dates):
-            date_str = d.strftime("%a, %b %d, %Y")
+        for d in sorted(selected_dates):
+            date_str = d.strftime("%A, %b %d, %Y")
             
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                ntype = st.selectbox(
-                    f"{date_str}", 
-                    options, 
-                    key=f"type_{d}"
-                )
-            with col2:
-                time_info = st.text_input(
-                    f"Time Details ({date_str})", 
-                    placeholder="ETA / Departure Time (if applicable)", 
-                    key=f"time_{d}"
-                )
-                
-            date_entries.append({
-                "date": d,
-                "type": ntype,
-                "time_info": time_info.strip()
-            })
+            with st.container(border=True):
+                st.markdown(f"**📅 {date_str}**")
+                col_status, col_time = st.columns([1, 1])
+                with col_status:
+                    ntype = st.selectbox("Status", options, key=f"type_{d}")
+                with col_time:
+                    time_info = st.text_input(
+                        "Time Details", 
+                        placeholder="e.g., 10:30 AM / Leaving 2 PM", 
+                        key=f"time_{d}"
+                    )
+                    
+                date_entries.append({
+                    "date": d,
+                    "type": ntype,
+                    "time_info": time_info.strip()
+                })
 
         st.markdown("---")
-        reason = st.text_area("Reason / Context", placeholder="Brief reason for the schedule adjustment...")
-        submitted = st.form_submit_button("Submit Notification", type="primary")
+        reason = st.text_area("Reason / Context", placeholder="Brief explanation for your shift adjustment...")
+        submitted = st.form_submit_button("Submit Notification", type="primary", use_container_width=True)
 
         if submitted:
             # Validation
             validation_error = None
             if not worker_name.strip():
-                validation_error = "Please enter a Team Member Name."
+                validation_error = "Please enter your name."
             elif not reason.strip():
-                validation_error = "Please enter a Reason / Context."
+                validation_error = "Please provide a reason/context."
             else:
                 for entry in date_entries:
                     if entry["type"] in ["Late", "Leave Early"] and not entry["time_info"]:
-                        validation_error = f"Time details are required for {entry['date'].strftime('%b %d')} ({entry['type']})."
+                        validation_error = f"Time details required for {entry['date'].strftime('%b %d')} ({entry['type']})."
                         break
 
             if validation_error:
                 st.error(validation_error)
             else:
-                success = notify_slack(worker_name, date_entries, reason)
-                if success:
-                    st.success(f"Success! Attendance update logged for {worker_name}.")
-                    st.session_state.selected_dates = [date.today()]  # Reset date list after submission
+                if notify_slack(worker_name, date_entries, reason):
+                    st.success(f"Notification successfully sent to Slack for {worker_name}!")
 else:
-    st.info("Please pick at least one date using the calendar above.")
+    st.info("Please click and select at least one date from the calendar widget above.")
