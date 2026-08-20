@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 # Configure via environment variable in production
-SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL")
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/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")
 
 def notify_slack(worker_name, notification_type, reason, eta=""):
     """Pushes formatted attendance data to the Slack channel with visual priority."""
