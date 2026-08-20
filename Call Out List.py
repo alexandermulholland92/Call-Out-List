@@ -6,61 +6,47 @@ from datetime import date, timedelta
 # Fetch Slack Webhook URL from Streamlit Secrets or Environment Variables
 SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"))
 
-def format_date_list(dates):
-    """Sorts and formats multiple independent dates into readable text."""
-    if not dates:
-        return "N/A"
-    
-    sorted_dates = sorted(dates)
-    if len(sorted_dates) == 1:
-        return sorted_dates[0].strftime("%A, %B %d, %Y")
-    
-    # Formats multiple dates as: "Mon, Aug 24, 2026 | Wed, Aug 26, 2026"
-    return " | ".join(d.strftime("%a, %b %d, %Y") for d in sorted_dates)
+TYPE_CONFIGS = {
+    "Call Out (Full Day)": {"emoji": "🚨"},
+    "Call Out AM": {"emoji": "🌅"},
+    "Call Out PM": {"emoji": "🌇"},
+    "Late": {"emoji": "⏳"},
+    "Leave Early": {"emoji": "🏃"}
+}
 
-def notify_slack(worker_name, notification_type, formatted_date, reason, time_info=""):
-    """Pushes formatted attendance data to Slack with distinct visual priority."""
+def notify_slack(worker_name, date_entries, reason):
+    """Pushes formatted multi-date attendance data to Slack."""
     
-    configs = {
-        "Late": {
-            "header": "⏳ *Running Late*",
-            "color": "#FF9500",
-            "details": f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*ETA:* {time_info}\n*Context:* {reason}"
-        },
-        "Call Out": {
-            "header": "🚨 *Call Out (Full Day)*",
-            "color": "#FF3B30",
-            "details": f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*Context:* {reason}"
-        },
-        "Call Out AM": {
-            "header": "🌅 *Call Out (AM Shift)*",
-            "color": "#FF3B30",
-            "details": f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*Context:* {reason}"
-        },
-        "Call Out PM": {
-            "header": "🌇 *Call Out (PM Shift)*",
-            "color": "#FF3B30",
-            "details": f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*Context:* {reason}"
-        },
-        "Leave Early": {
-            "header": "🏃 *Leaving Early*",
-            "color": "#FFCC00",
-            "details": f"*Name:* {worker_name}\n*Date(s):* {formatted_date}\n*Departure Time:* {time_info}\n*Context:* {reason}"
-        }
-    }
+    schedule_lines = []
+    has_call_out = False
+    
+    for entry in date_entries:
+        d_str = entry["date"].strftime("%a, %b %d, %Y")
+        ntype = entry["type"]
+        time_info = entry["time_info"]
+        emoji = TYPE_CONFIGS[ntype]["emoji"]
+        
+        line = f"• *{d_str}*: {emoji} {ntype}"
+        if time_info:
+            line += f" _({time_info})_"
+        schedule_lines.append(line)
+        
+        if "Call Out" in ntype:
+            has_call_out = True
 
-    config = configs.get(notification_type, configs["Call Out"])
+    schedule_text = "\n".join(schedule_lines)
+    color = "#FF3B30" if has_call_out else "#FF9500"  # Red if call out, Orange if late/leaving early
 
     payload = {
         "attachments": [
             {
-                "color": config["color"],
+                "color": color,
                 "blocks": [
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"{config['header']}\n{config['details']}"
+                            "text": f"📋 *Attendance Schedule Update*\n*Name:* {worker_name}\n\n*Schedule Details:*\n{schedule_text}\n\n*Context:* {reason}"
                         }
                     }
                 ]
@@ -80,44 +66,69 @@ def notify_slack(worker_name, notification_type, formatted_date, reason, time_in
 st.title("Attendance Update")
 st.write("Submit call outs or attendance notices directly to Slack.")
 
-with st.form("attendance_form"):
-    worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
-    
-    options = ["Late", "Call Out", "Call Out AM", "Call Out PM", "Leave Early"]
-    notification_type = st.selectbox("Notification Type", options)
-    
-    # Generate rolling window of dates (3 days in past to 60 days in future)
-    today = date.today()
-    available_dates = [today + timedelta(days=i) for i in range(-3, 60)]
-    
-    selected_dates = st.multiselect(
-        "Select Date(s)",
-        options=available_dates,
-        default=[today],
-        format_func=lambda d: d.strftime("%a, %b %d, %Y")
-    )
-    
-    time_info = st.text_input(
-        "Time Details (ETA if Late / Departure Time if Leaving Early)", 
-        placeholder="e.g. 10:30 AM or 'Leaving at 2:00 PM'"
-    )
-    
-    reason = st.text_area("Reason / Context", placeholder="Brief reason for the schedule adjustment...")
-    
-    submitted = st.form_submit_button("Submit Notification", type="primary")
+worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-    if submitted:
-        formatted_date = format_date_list(selected_dates)
+# Generate rolling window of dates
+today = date.today()
+available_dates = [today + timedelta(days=i) for i in range(-3, 60)]
+
+selected_dates = st.multiselect(
+    "1. Select Date(s)",
+    options=available_dates,
+    default=[today],
+    format_func=lambda d: d.strftime("%a, %b %d, %Y")
+)
+
+if selected_dates:
+    st.subheader("2. Configure Status per Date")
+    
+    with st.form("attendance_form"):
+        date_entries = []
+        options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
         
-        if not worker_name.strip():
-            st.error("Please enter a Team Member Name.")
-        elif not selected_dates:
-            st.error("Please select at least one date.")
-        elif not reason.strip():
-            st.error("Please enter a Reason / Context.")
-        elif notification_type in ["Late", "Leave Early"] and not time_info.strip():
-            st.error(f"Time details are required when selecting '{notification_type}'.")
-        else:
-            success = notify_slack(worker_name, notification_type, formatted_date, reason, time_info)
-            if success:
-                st.success(f"Success! '{notification_type}' logged for {worker_name} ({formatted_date}).")
+        for d in sorted(selected_dates):
+            date_str = d.strftime("%a, %b %d, %Y")
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                ntype = st.selectbox(
+                    f"{date_str}", 
+                    options, 
+                    key=f"type_{d}"
+                )
+            with col2:
+                time_info = st.text_input(
+                    f"Time Details ({date_str})", 
+                    placeholder="ETA / Departure Time (if applicable)", 
+                    key=f"time_{d}"
+                )
+                
+            date_entries.append({
+                "date": d,
+                "type": ntype,
+                "time_info": time_info.strip()
+            })
+
+        st.markdown("---")
+        reason = st.text_area("Reason / Context", placeholder="Brief reason for the schedule adjustment...")
+        submitted = st.form_submit_button("Submit Notification", type="primary")
+
+        if submitted:
+            # Validation
+            validation_error = None
+            if not worker_name.strip():
+                validation_error = "Please enter a Team Member Name."
+            elif not reason.strip():
+                validation_error = "Please enter a Reason / Context."
+            else:
+                for entry in date_entries:
+                    if entry["type"] in ["Late", "Leave Early"] and not entry["time_info"]:
+                        validation_error = f"Time details are required for {entry['date'].strftime('%b %d')} ({entry['type']})."
+                        break
+
+            if validation_error:
+                st.error(validation_error)
+            else:
+                success = notify_slack(worker_name, date_entries, reason)
+                if success:
+                    st.success(f"Success! Attendance update logged for {worker_name}.")
