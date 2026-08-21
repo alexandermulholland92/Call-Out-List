@@ -4,7 +4,7 @@ import requests
 import streamlit as st
 
 # Set page config & styling
-st.set_page_config(page_title="Attendance Notice", page_icon="🗓️", layout="centered")
+st.set_page_config(page_title="Attendance Notice", page_icon="📋", layout="centered")
 
 st.markdown("""
     <style>
@@ -74,9 +74,21 @@ def notify_slack(worker_name, date_entries, reason):
 st.title("📋 Attendance Update")
 st.caption("Submit attendance notices directly to Slack.")
 
-# Initialize session state for storing dates (now empty by default)
+# Initialize session state for storing dates & submission status
 if "selected_dates" not in st.session_state:
     st.session_state.selected_dates = []
+
+if "last_submission" not in st.session_state:
+    st.session_state.last_submission = None
+
+# Show persistent confirmation alert upon successful submission
+if st.session_state.last_submission:
+    sub = st.session_state.last_submission
+    st.success(f"🎉 **Attendance Notice Submitted Successfully!**\n\nNotification sent to Slack for **{sub['name']}** covering **{sub['count']} date(s)** ({sub['dates_str']}).")
+    st.balloons()
+    if st.button("Dismiss Confirmation", type="secondary"):
+        st.session_state.last_submission = None
+        st.rerun()
 
 # --- Inputs ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
@@ -87,12 +99,13 @@ col_cal, col_add, col_clear = st.columns([2, 1, 1])
 with col_cal:
     picked_dates = st.date_input(
         "Select a Single Date or Date Range", 
-        value=() # Empty tuple forces the calendar selection box to be empty by default
+        value=() # Empty tuple forces calendar to be empty by default
     )
     
 with col_add:
     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
     if st.button("➕ Add Date(s)", use_container_width=True):
+        st.session_state.last_submission = None  # Clear past confirmation banner on new interaction
         if picked_dates:
             if len(picked_dates) == 1:
                 d = picked_dates[0]
@@ -116,6 +129,7 @@ with col_clear:
     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
     if st.button("🗑️ Clear All", type="secondary", use_container_width=True):
         st.session_state.selected_dates = []
+        st.session_state.last_submission = None
         st.rerun()
 
 date_entries = []
@@ -133,7 +147,6 @@ if st.session_state.selected_dates:
                 with col_head:
                     st.markdown(f"**📅 {date_str}**")
                 with col_del:
-                    # Remove button for individual dates
                     if st.form_submit_button("❌ Remove", key=f"del_{d}"):
                         st.session_state.selected_dates.remove(d)
                         st.rerun()
@@ -159,6 +172,8 @@ if st.session_state.selected_dates:
         submitted = st.form_submit_button("Submit Notification", type="primary", use_container_width=True)
 
         if submitted:
+            st.session_state.last_submission = None
+            
             # Validation
             validation_error = None
             if not worker_name.strip():
@@ -175,8 +190,13 @@ if st.session_state.selected_dates:
                 st.error(validation_error)
             else:
                 if notify_slack(worker_name, date_entries, reason):
-                    st.success(f"Notification successfully sent to Slack for {worker_name}!")
-                    # Reset the list to empty on a successful submission
+                    # Save submission summary so it survives the rerun
+                    dates_formatted = ", ".join([e["date"].strftime("%b %d") for e in date_entries])
+                    st.session_state.last_submission = {
+                        "name": worker_name,
+                        "count": len(date_entries),
+                        "dates_str": dates_formatted
+                    }
                     st.session_state.selected_dates = []
                     st.rerun()
 else:
