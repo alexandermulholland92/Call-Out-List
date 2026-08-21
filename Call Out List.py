@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, timedelta
 import requests
 import streamlit as st
 
@@ -81,17 +81,39 @@ if "selected_dates" not in st.session_state:
 # --- Inputs ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# Calendar widget to select date to add
+# Calendar widget configured for ranges (returns a tuple of 1 or 2 dates)
 col_cal, col_add = st.columns([3, 1])
 with col_cal:
-    picked_date = st.date_input("Calendar Date Picker", value=date.today())
+    picked_dates = st.date_input(
+        "Select a Single Date or Date Range", 
+        value=() # Empty tuple allows it to act as a dynamic range picker
+    )
+    
 with col_add:
     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-    if st.button("➕ Add Date", use_container_width=True):
-        if picked_date not in st.session_state.selected_dates:
-            st.session_state.selected_dates.append(picked_date)
+    if st.button("➕ Add Date(s)", use_container_width=True):
+        if picked_dates:
+            # If user clicked just one date (length 1 tuple)
+            if len(picked_dates) == 1:
+                d = picked_dates[0]
+                if d not in st.session_state.selected_dates:
+                    st.session_state.selected_dates.append(d)
+            
+            # If user clicked a start and end date (length 2 tuple)
+            elif len(picked_dates) == 2:
+                start_date, end_date = picked_dates
+                delta = end_date - start_date
+                
+                # Loop through every day in the range and add it
+                for i in range(delta.days + 1):
+                    d = start_date + timedelta(days=i)
+                    if d not in st.session_state.selected_dates:
+                        st.session_state.selected_dates.append(d)
+                        
             st.session_state.selected_dates.sort()
             st.rerun()
+        else:
+            st.warning("Please select a date from the calendar first.")
 
 date_entries = []
 options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
