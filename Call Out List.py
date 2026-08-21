@@ -81,30 +81,27 @@ if "selected_dates" not in st.session_state:
 # --- Inputs ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# Calendar widget configured for ranges (returns a tuple of 1 or 2 dates)
-col_cal, col_add = st.columns([3, 1])
+# Calendar widget configured for ranges, plus Add and Clear buttons
+col_cal, col_add, col_clear = st.columns([2, 1, 1])
+
 with col_cal:
     picked_dates = st.date_input(
         "Select a Single Date or Date Range", 
-        value=() # Empty tuple allows it to act as a dynamic range picker
+        value=() # Empty tuple allows dynamic range picking
     )
     
 with col_add:
     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
     if st.button("➕ Add Date(s)", use_container_width=True):
         if picked_dates:
-            # If user clicked just one date (length 1 tuple)
             if len(picked_dates) == 1:
                 d = picked_dates[0]
                 if d not in st.session_state.selected_dates:
                     st.session_state.selected_dates.append(d)
-            
-            # If user clicked a start and end date (length 2 tuple)
             elif len(picked_dates) == 2:
                 start_date, end_date = picked_dates
                 delta = end_date - start_date
                 
-                # Loop through every day in the range and add it
                 for i in range(delta.days + 1):
                     d = start_date + timedelta(days=i)
                     if d not in st.session_state.selected_dates:
@@ -114,6 +111,12 @@ with col_add:
             st.rerun()
         else:
             st.warning("Please select a date from the calendar first.")
+
+with col_clear:
+    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+    if st.button("🗑️ Clear All", type="secondary", use_container_width=True):
+        st.session_state.selected_dates = []
+        st.rerun()
 
 date_entries = []
 options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
@@ -130,10 +133,10 @@ if st.session_state.selected_dates:
                 with col_head:
                     st.markdown(f"**📅 {date_str}**")
                 with col_del:
-                    if len(st.session_state.selected_dates) > 1:
-                        if st.form_submit_button("Remove", key=f"del_{d}"):
-                            st.session_state.selected_dates.remove(d)
-                            st.rerun()
+                    # The > 1 restriction has been removed, so you can delete any date
+                    if st.form_submit_button("❌ Remove", key=f"del_{d}"):
+                        st.session_state.selected_dates.remove(d)
+                        st.rerun()
 
                 col_status, col_time = st.columns([1, 1])
                 with col_status:
@@ -175,3 +178,5 @@ if st.session_state.selected_dates:
                     st.success(f"Notification successfully sent to Slack for {worker_name}!")
                     st.session_state.selected_dates = [date.today()]
                     st.rerun()
+else:
+    st.info("Your list is currently empty. Please select and add a date using the calendar above.")
