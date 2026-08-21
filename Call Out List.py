@@ -78,7 +78,7 @@ def notify_slack(worker_name, date_entries, reason):
 st.title("📋 Attendance Update")
 st.caption("Submit attendance notices directly to Slack.")
 
-# Initialize session state (including the dynamic calendar key)
+# Initialize session state 
 if "date_entries" not in st.session_state:
     st.session_state.date_entries = {}
 
@@ -105,53 +105,45 @@ st.markdown("---")
 st.subheader("1. Add Date Entry")
 
 options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
-
-# Status selection right before the date picker
 selected_status = st.selectbox("Status / Action", options)
 
-col_cal, col_add, col_clear = st.columns([2, 1, 1])
+# Split into two robust Start & End date pickers (empty by default)
+col_start, col_end = st.columns(2)
+with col_start:
+    start_date = st.date_input("Start Date", value=None, key=f"start_{st.session_state.cal_key}")
+with col_end:
+    end_date = st.date_input("End Date (Optional)", value=None, help="Leave blank for a single day.", key=f"end_{st.session_state.cal_key}")
 
-with col_cal:
-    # Use value=[] instead of () and a dynamic key to protect the range state
-    picked_dates = st.date_input(
-        "Select Date or Date Range", 
-        value=[], 
-        key=f"cal_{st.session_state.cal_key}"
-    )
-    
+col_add, col_clear = st.columns([3, 1])
 with col_add:
-    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
     if st.button("➕ Add Date(s)", type="primary", use_container_width=True):
         st.session_state.last_submission = None
         
-        if picked_dates:
-            dates_to_add = []
-            if len(picked_dates) == 1:
-                dates_to_add.append(picked_dates[0])
-            elif len(picked_dates) == 2:
-                start_date, end_date = picked_dates
-                delta = end_date - start_date
+        if start_date:
+            actual_end = end_date if end_date else start_date
+            
+            if actual_end < start_date:
+                st.error("End Date cannot be before the Start Date.")
+            else:
+                delta = actual_end - start_date
                 for i in range(delta.days + 1):
-                    dates_to_add.append(start_date + timedelta(days=i))
+                    d = start_date + timedelta(days=i)
+                    st.session_state.date_entries[d] = {
+                        "type": selected_status,
+                        "time_info": ""
+                    }
 
-            for d in dates_to_add:
-                st.session_state.date_entries[d] = {
-                    "type": selected_status,
-                    "time_info": ""
-                }
-
-            # Increment the key to force the calendar widget to wipe itself clean
-            st.session_state.cal_key += 1
-            st.rerun()
+                # Increment key to completely reset the calendar widgets to blank
+                st.session_state.cal_key += 1
+                st.rerun()
         else:
-            st.warning("Please select a date on the calendar first.")
+            st.warning("Please select a Start Date first.")
 
 with col_clear:
-    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
     if st.button("🗑️ Clear All", type="secondary", use_container_width=True):
         st.session_state.date_entries = {}
         st.session_state.last_submission = None
-        st.session_state.cal_key += 1 # Reset the calendar here as well
+        st.session_state.cal_key += 1
         st.rerun()
 
 # --- STEP 3: CONFIGURE EACH DATE & SUBMIT ---
@@ -224,4 +216,4 @@ if st.session_state.date_entries:
                 st.session_state.cal_key += 1
                 st.rerun()
 else:
-    st.info("No dates added yet. Choose a status, pick date(s) on the calendar, and click **➕ Add Date(s)**.")
+    st.info("No dates added yet. Choose a status, pick a Start Date, and click **➕ Add Date(s)**.")
