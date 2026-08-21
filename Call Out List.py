@@ -3,8 +3,12 @@ from datetime import date, timedelta
 import requests
 import streamlit as st
 
-# Set page config & styling
-st.set_page_config(page_title="Attendance Notice", page_icon="📋", layout="centered")
+# Configure page & favicons
+st.set_page_config(
+    page_title="Attendance Notice", 
+    page_icon="📋", 
+    layout="centered"
+)
 
 st.markdown("""
     <style>
@@ -12,7 +16,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Fetch Slack Webhook URL from Streamlit Secrets or Environment Variables
+# Fetch Slack Webhook URL
 SLACK_WEBHOOK_URL = st.secrets.get("SLACK_WEBHOOK_URL", os.environ.get("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"))
 
 TYPE_CONFIGS = {
@@ -74,7 +78,7 @@ def notify_slack(worker_name, date_entries, reason):
 st.title("📋 Attendance Update")
 st.caption("Submit attendance notices directly to Slack.")
 
-# Initialize session state for storing dates & submission status
+# Initialize session state
 if "selected_dates" not in st.session_state:
     st.session_state.selected_dates = []
 
@@ -90,22 +94,26 @@ if st.session_state.last_submission:
         st.session_state.last_submission = None
         st.rerun()
 
-# --- Inputs ---
+# --- STEP 1: TEAM MEMBER NAME ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# Calendar widget configured for ranges, plus Add and Clear buttons
+# --- STEP 2: SELECT DATES ---
+st.markdown("---")
+st.subheader("1. Select Date(s)")
+
 col_cal, col_add, col_clear = st.columns([2, 1, 1])
 
 with col_cal:
     picked_dates = st.date_input(
-        "Select a Single Date or Date Range", 
-        value=() # Empty tuple forces calendar to be empty by default
+        "Select Date or Date Range", 
+        value=() # Empty tuple starts calendar unselected
     )
     
 with col_add:
     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-    if st.button("➕ Add Date(s)", use_container_width=True):
-        st.session_state.last_submission = None  # Clear past confirmation banner on new interaction
+    if st.button("➕ Add Date(s)", type="primary", use_container_width=True):
+        st.session_state.last_submission = None
+        
         if picked_dates:
             if len(picked_dates) == 1:
                 d = picked_dates[0]
@@ -114,16 +122,15 @@ with col_add:
             elif len(picked_dates) == 2:
                 start_date, end_date = picked_dates
                 delta = end_date - start_date
-                
                 for i in range(delta.days + 1):
                     d = start_date + timedelta(days=i)
                     if d not in st.session_state.selected_dates:
                         st.session_state.selected_dates.append(d)
-                        
+
             st.session_state.selected_dates.sort()
             st.rerun()
         else:
-            st.warning("Please select a date from the calendar first.")
+            st.warning("Please select a date on the calendar first.")
 
 with col_clear:
     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -132,72 +139,72 @@ with col_clear:
         st.session_state.last_submission = None
         st.rerun()
 
-date_entries = []
+# --- STEP 3: CONFIGURE EACH DATE & SUBMIT ---
+st.markdown("---")
+st.subheader("2. Configure Status & Details per Date")
+
 options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
 
 if st.session_state.selected_dates:
-    st.subheader("Configure Selected Dates")
+    date_entries = []
     
-    with st.form("attendance_form"):
-        for d in sorted(st.session_state.selected_dates):
-            date_str = d.strftime("%A, %b %d, %Y")
-            
-            with st.container(border=True):
-                col_head, col_del = st.columns([4, 1])
-                with col_head:
-                    st.markdown(f"**📅 {date_str}**")
-                with col_del:
-                    if st.form_submit_button("❌ Remove", key=f"del_{d}"):
-                        st.session_state.selected_dates.remove(d)
-                        st.rerun()
-
-                col_status, col_time = st.columns([1, 1])
-                with col_status:
-                    ntype = st.selectbox("Status", options, key=f"type_{d}")
-                with col_time:
-                    time_info = st.text_input(
-                        "Time Details", 
-                        placeholder="e.g., 10:30 AM / Leaving 2 PM", 
-                        key=f"time_{d}"
-                    )
-                    
-                date_entries.append({
-                    "date": d,
-                    "type": ntype,
-                    "time_info": time_info.strip()
-                })
-
-        st.markdown("---")
-        reason = st.text_area("Reason / Context", placeholder="Brief explanation for your shift adjustment...")
-        submitted = st.form_submit_button("Submit Notification", type="primary", use_container_width=True)
-
-        if submitted:
-            st.session_state.last_submission = None
-            
-            # Validation
-            validation_error = None
-            if not worker_name.strip():
-                validation_error = "Please enter your name."
-            elif not reason.strip():
-                validation_error = "Please provide a reason/context."
-            else:
-                for entry in date_entries:
-                    if entry["type"] in ["Late", "Leave Early"] and not entry["time_info"]:
-                        validation_error = f"Time details required for {entry['date'].strftime('%b %d')} ({entry['type']})."
-                        break
-
-            if validation_error:
-                st.error(validation_error)
-            else:
-                if notify_slack(worker_name, date_entries, reason):
-                    # Save submission summary so it survives the rerun
-                    dates_formatted = ", ".join([e["date"].strftime("%b %d") for e in date_entries])
-                    st.session_state.last_submission = {
-                        "name": worker_name,
-                        "count": len(date_entries),
-                        "dates_str": dates_formatted
-                    }
-                    st.session_state.selected_dates = []
+    for d in sorted(st.session_state.selected_dates):
+        date_str = d.strftime("%A, %b %d, %Y")
+        
+        with st.container(border=True):
+            col_head, col_del = st.columns([5, 1])
+            with col_head:
+                st.markdown(f"**📅 {date_str}**")
+            with col_del:
+                if st.button("❌ Remove", key=f"del_{d}", use_container_width=True):
+                    st.session_state.selected_dates.remove(d)
                     st.rerun()
+
+            col_status, col_time = st.columns([1, 1])
+            with col_status:
+                ntype = st.selectbox("Status", options, key=f"type_{d}")
+            with col_time:
+                time_info = st.text_input(
+                    "Time Details", 
+                    placeholder="e.g., 10:30 AM / Leaving 2 PM", 
+                    key=f"time_{d}"
+                )
+                
+            date_entries.append({
+                "date": d,
+                "type": ntype,
+                "time_info": time_info.strip()
+            })
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    reason = st.text_area("Reason / Context", placeholder="Brief explanation for your shift adjustment...")
+    
+    if st.button("Submit Notification", type="primary", use_container_width=True):
+        st.session_state.last_submission = None
+        
+        # Validation
+        validation_error = None
+        if not worker_name.strip():
+            validation_error = "Please enter your name."
+        elif not reason.strip():
+            validation_error = "Please provide a reason/context."
+        else:
+            for entry in date_entries:
+                if entry["type"] in ["Late", "Leave Early"] and not entry["time_info"]:
+                    validation_error = f"Time details required for {entry['date'].strftime('%b %d')} ({entry['type']})."
+                    break
+
+        if validation_error:
+            st.error(validation_error)
+        else:
+            if notify_slack(worker_name, date_entries, reason):
+                dates_formatted = ", ".join([e["date"].strftime("%b %d") for e in date_entries])
+                st.session_state.last_submission = {
+                    "name": worker_name,
+                    "count": len(date_entries),
+                    "dates_str": dates_formatted
+                }
+                st.session_state.selected_dates = []
+                st.rerun()
 else:
-    st.info("Your list is currently empty. Please select and add a date using the calendar above.")
+    st.info("No dates added yet. Select dates on the calendar above and click **➕ Add Date(s)**.")
