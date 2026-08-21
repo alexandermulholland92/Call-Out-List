@@ -4,7 +4,7 @@ import requests
 import streamlit as st
 
 # Set page config & styling
-st.set_page_config(page_title="Attendance Notice", page_icon="📋", layout="centered")
+st.set_page_config(page_title="Attendance Notice", page_icon="🗓️", layout="centered")
 
 st.markdown("""
     <style>
