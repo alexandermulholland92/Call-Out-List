@@ -74,9 +74,9 @@ def notify_slack(worker_name, date_entries, reason):
 st.title("📋 Attendance Update")
 st.caption("Submit attendance notices directly to Slack.")
 
-# Initialize session state for storing dates picked from calendar
+# Initialize session state for storing dates (now empty by default)
 if "selected_dates" not in st.session_state:
-    st.session_state.selected_dates = [date.today()]
+    st.session_state.selected_dates = []
 
 # --- Inputs ---
 worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
@@ -87,7 +87,7 @@ col_cal, col_add, col_clear = st.columns([2, 1, 1])
 with col_cal:
     picked_dates = st.date_input(
         "Select a Single Date or Date Range", 
-        value=() # Empty tuple allows dynamic range picking
+        value=() # Empty tuple forces the calendar selection box to be empty by default
     )
     
 with col_add:
@@ -133,7 +133,7 @@ if st.session_state.selected_dates:
                 with col_head:
                     st.markdown(f"**📅 {date_str}**")
                 with col_del:
-                    # The > 1 restriction has been removed, so you can delete any date
+                    # Remove button for individual dates
                     if st.form_submit_button("❌ Remove", key=f"del_{d}"):
                         st.session_state.selected_dates.remove(d)
                         st.rerun()
@@ -176,7 +176,8 @@ if st.session_state.selected_dates:
             else:
                 if notify_slack(worker_name, date_entries, reason):
                     st.success(f"Notification successfully sent to Slack for {worker_name}!")
-                    st.session_state.selected_dates = [date.today()]
+                    # Reset the list to empty on a successful submission
+                    st.session_state.selected_dates = []
                     st.rerun()
 else:
     st.info("Your list is currently empty. Please select and add a date using the calendar above.")
