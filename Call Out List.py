@@ -106,12 +106,11 @@ if st.session_state.last_submission:
         st.session_state.last_submission = None
         st.rerun()
 
-# --- STEP 1: TEAM MEMBER NAME ---
-worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
-# --- STEP 2: SELECT STATUS THEN DATE ---
-st.markdown("---")
+# --- STEP 1: ADD ENTRY (Name, Status, Dates) ---
 st.subheader("1. Add Date Entry")
+
+worker_name = st.text_input("Team Member Name", placeholder="e.g. John Doe")
 
 options = ["Call Out (Full Day)", "Call Out AM", "Call Out PM", "Late", "Leave Early"]
 selected_status = st.selectbox("Status / Action", options)
@@ -156,7 +155,7 @@ with col_clear:
         st.session_state.cal_key += 1
         st.rerun()
 
-# --- STEP 3: CONFIGURE EACH BUNDLE & SUBMIT ---
+# --- STEP 2: CONFIGURE BUNDLES & SUBMIT ---
 st.markdown("---")
 st.subheader("2. Configured Dates & Details")
 
