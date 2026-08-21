@@ -78,12 +78,15 @@ def notify_slack(worker_name, date_entries, reason):
 st.title("📋 Attendance Update")
 st.caption("Submit attendance notices directly to Slack.")
 
-# Initialize session state
+# Initialize session state (including the dynamic calendar key)
 if "date_entries" not in st.session_state:
     st.session_state.date_entries = {}
 
 if "last_submission" not in st.session_state:
     st.session_state.last_submission = None
+
+if "cal_key" not in st.session_state:
+    st.session_state.cal_key = 0
 
 # Show persistent confirmation alert upon successful submission
 if st.session_state.last_submission:
@@ -109,9 +112,11 @@ selected_status = st.selectbox("Status / Action", options)
 col_cal, col_add, col_clear = st.columns([2, 1, 1])
 
 with col_cal:
+    # Use value=[] instead of () and a dynamic key to protect the range state
     picked_dates = st.date_input(
         "Select Date or Date Range", 
-        value=() # Empty tuple starts calendar unselected
+        value=[], 
+        key=f"cal_{st.session_state.cal_key}"
     )
     
 with col_add:
@@ -130,12 +135,13 @@ with col_add:
                     dates_to_add.append(start_date + timedelta(days=i))
 
             for d in dates_to_add:
-                # Store entry mapped by date with pre-selected status
                 st.session_state.date_entries[d] = {
                     "type": selected_status,
                     "time_info": ""
                 }
 
+            # Increment the key to force the calendar widget to wipe itself clean
+            st.session_state.cal_key += 1
             st.rerun()
         else:
             st.warning("Please select a date on the calendar first.")
@@ -145,6 +151,7 @@ with col_clear:
     if st.button("🗑️ Clear All", type="secondary", use_container_width=True):
         st.session_state.date_entries = {}
         st.session_state.last_submission = None
+        st.session_state.cal_key += 1 # Reset the calendar here as well
         st.rerun()
 
 # --- STEP 3: CONFIGURE EACH DATE & SUBMIT ---
@@ -214,6 +221,7 @@ if st.session_state.date_entries:
                     "dates_str": dates_formatted
                 }
                 st.session_state.date_entries = {}
+                st.session_state.cal_key += 1
                 st.rerun()
 else:
     st.info("No dates added yet. Choose a status, pick date(s) on the calendar, and click **➕ Add Date(s)**.")
